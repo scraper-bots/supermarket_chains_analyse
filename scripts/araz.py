@@ -36,6 +36,113 @@ def scrape_araz_locations(url: str = "https://arazmarket.az/az/stores") -> List[
     soup = BeautifulSoup(response.text, 'html.parser')
     branches = []
 
+    # Check for Next.js data
+    import json
+    import re
+
+    # Look for Next.js RSC (React Server Components) streaming data
+    # The data is embedded in self.__next_f.push() calls
+    print("\nExtracting data from Next.js streaming format...")
+
+    # Find all self.__next_f.push() calls in the HTML
+    push_pattern = r'self\.__next_f\.push\((\[.*?\])\)'
+    matches = re.findall(push_pattern, response.text)
+
+    print(f"Found {len(matches)} data chunks")
+
+    # Parse each chunk and look for store data
+    stores_found = []
+
+    for match in matches:
+        try:
+            # Parse the array [index, data]
+            chunk = json.loads(match)
+            if len(chunk) >= 2:
+                data_str = chunk[1]
+
+                # Check if this chunk contains store data
+                if isinstance(data_str, str) and ('"title"' in data_str and '"address"' in data_str and '"phone_number"' in data_str):
+                    # This looks like store data
+                    # Try to extract JSON objects from the string
+                    # The data might be escaped JSON within a string
+
+                    # Look for store objects pattern
+                    store_pattern = r'\{[^{}]*"id":\d+[^{}]*"title":"([^"]+)"[^{}]*"address":"([^"]+)"[^{}]*"work_time":"([^"]+)"[^{}]*"phone_number":"([^"]+)"[^{}]*\}'
+
+                    store_matches = re.finditer(store_pattern, data_str)
+
+                    for store_match in store_matches:
+                        # Extract escaped characters
+                        name = store_match.group(1).replace('\\\\', '\\')
+                        address = store_match.group(2).replace('\\\\', '\\')
+                        hours = store_match.group(3).replace('\\\\', '\\')
+                        phone = store_match.group(4).replace('\\\\', '\\')
+
+                        branch_data = {
+                            'name': name,
+                            'address': address,
+                            'phone': phone,
+                            'hours': hours
+                        }
+
+                        # Check if we already have this store (avoid duplicates)
+                        if not any(s['name'] == name and s['address'] == address for s in stores_found):
+                            stores_found.append(branch_data)
+
+        except Exception as e:
+            # Skip chunks that can't be parsed
+            continue
+
+    if stores_found:
+        print(f"Successfully extracted {len(stores_found)} stores from streaming data")
+        for branch in stores_found:
+            branches.append(branch)
+            print(f"Extracted: {branch['name']}")
+
+        return branches
+
+    # Look for __NEXT_DATA__ script tag as fallback
+    next_data_script = soup.find('script', id='__NEXT_DATA__')
+    if next_data_script:
+        try:
+            data = json.loads(next_data_script.string)
+            print("\nFound __NEXT_DATA__ - extracting store information...")
+
+            # Navigate through the Next.js data structure to find stores
+            # The structure is: props -> pageProps -> stores (or similar)
+            page_props = data.get('props', {}).get('pageProps', {})
+
+            # Try different possible keys where stores might be
+            stores_data = None
+            for key in ['stores', 'branches', 'locations', 'data', 'storesList']:
+                if key in page_props:
+                    stores_data = page_props[key]
+                    print(f"Found stores data under key: {key}")
+                    break
+
+            if not stores_data:
+                # Print available keys to help debug
+                print(f"Available keys in pageProps: {list(page_props.keys())}")
+
+            if stores_data and isinstance(stores_data, list):
+                print(f"Found {len(stores_data)} stores in __NEXT_DATA__")
+
+                for store in stores_data:
+                    branch_data = {
+                        'name': store.get('name', store.get('title', 'N/A')),
+                        'address': store.get('address', store.get('location', '')),
+                        'phone': store.get('phone', store.get('tel', '')),
+                        'hours': store.get('hours', store.get('workingHours', store.get('working_hours', '')))
+                    }
+                    branches.append(branch_data)
+                    print(f"Extracted: {branch_data['name']}")
+
+                return branches
+
+        except Exception as e:
+            print(f"Error parsing __NEXT_DATA__: {e}")
+
+    # If __NEXT_DATA__ approach didn't work, try HTML parsing
     # Find all store containers - try different selectors
     store_divs = soup.find_all('div', class_='page_list__v5vEU')
 
@@ -53,10 +160,54 @@ def scrape_araz_locations(url: str = "https://arazmarket.az/az/stores") -> List[
         all_divs = soup.find_all('div', class_=lambda x: x and 'list' in x.lower() if isinstance(x, str) else False)
         print(f"Found {len(all_divs)} divs with 'list' in class name")
 
-        # Check if we got a valid HTML response
-        if len(response.text) < 1000:
-            print(f"Warning: Response seems too short ({len(response.text)} chars)")
-            print("Response preview:", response.text[:500])
+        # Check all div classes to see what's available
+        all_divs_with_classes = soup.find_all('div', class_=True)
+        unique_classes = set()
+        for div in all_divs_with_classes[:50]:  # Check first 50 divs
+            if div.get('class'):
+                for cls in div.get('class'):
+                    unique_classes.add(cls)
+
+        print(f"\nSample of div classes found (first 50 divs):")
+        for cls in sorted(list(unique_classes)[:20]):  # Show first 20 unique classes
+            print(f"  {cls}")
+
+        print(f"\nResponse length: {len(response.text)} chars")
+
+        # Check for script tags with JSON data
+        all_scripts = soup.find_all('script')
+        print(f"\nFound {len(all_scripts)} script tags")
+
+        # Look for scripts with actual content
+        scripts_with_content = [s for s in all_scripts if s.string]
+        print(f"  Scripts with content: {len(scripts_with_content)}")
+
+        # Search for patterns in the HTML that might indicate data location
+        print("\nSearching for data patterns in HTML...")
+
+        # Look for common patterns
+        patterns_to_check = [
+            ('"stores":', 'stores key in JSON'),
+            ('"branches":', 'branches key in JSON'),
+            ('"locations":', 'locations key in JSON'),
+            ('28 May', 'Specific store name 28 May'),
+            ('Azadlıq prospekti', 'Specific store Azadlıq'),
+            ('Neftçilər', 'Specific store Neftçilər'),
+            ('self.__next_f', 'Next.js flight data'),
+            ('/api/', 'API endpoints'),
+            ('buildId', 'Next.js build ID')
+        ]
+
+        for pattern, description in patterns_to_check:
+            count = response.text.count(pattern)
+            if count > 0:
+                print(f"  Found '{pattern}' ({description}): {count} times")
+                # Find first occurrence
+                idx = response.text.find(pattern)
+                if idx > 0:
+                    context_start = max(0, idx - 50)
+                    context_end = min(len(response.text), idx + 150)
+                    print(f"    Context: ...{response.text[context_start:context_end]}...")
 
     for store_div in store_divs:
         try:
