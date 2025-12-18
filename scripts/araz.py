@@ -66,23 +66,28 @@ def scrape_araz_locations(url: str = "https://arazmarket.az/az/stores") -> List[
                     # Try to extract JSON objects from the string
                     # The data might be escaped JSON within a string
 
-                    # Look for store objects pattern
-                    store_pattern = r'\{[^{}]*"id":\d+[^{}]*"title":"([^"]+)"[^{}]*"address":"([^"]+)"[^{}]*"work_time":"([^"]+)"[^{}]*"phone_number":"([^"]+)"[^{}]*\}'
+                    # Look for store objects pattern with coordinates
+                    # Pattern includes: id, title, address, work_time, phone_number, lat, lon
+                    store_pattern = r'\{"id":(\d+),"title":"([^"]+)","address":"([^"]+)","work_time":"([^"]+)","phone_number":"([^"]+)","lat":"([^"]+)","lon":"([^"]+)"[^}]*\}'
 
                     store_matches = re.finditer(store_pattern, data_str)
 
                     for store_match in store_matches:
                         # Extract escaped characters
-                        name = store_match.group(1).replace('\\\\', '\\')
-                        address = store_match.group(2).replace('\\\\', '\\')
-                        hours = store_match.group(3).replace('\\\\', '\\')
-                        phone = store_match.group(4).replace('\\\\', '\\')
+                        name = store_match.group(2).replace('\\\\', '\\')
+                        address = store_match.group(3).replace('\\\\', '\\')
+                        hours = store_match.group(4).replace('\\\\', '\\')
+                        phone = store_match.group(5).replace('\\\\', '\\')
+                        latitude = store_match.group(6)
+                        longitude = store_match.group(7)
 
                         branch_data = {
                             'name': name,
                             'address': address,
                             'phone': phone,
-                            'hours': hours
+                            'hours': hours,
+                            'latitude': latitude,
+                            'longitude': longitude
                         }
 
                         # Check if we already have this store (avoid duplicates)
@@ -142,72 +147,14 @@ def scrape_araz_locations(url: str = "https://arazmarket.az/az/stores") -> List[
         except Exception as e:
             print(f"Error parsing __NEXT_DATA__: {e}")
 
-    # If __NEXT_DATA__ approach didn't work, try HTML parsing
-    # Find all store containers - try different selectors
+    # If Next.js streaming data extraction didn't work, fall back to HTML parsing
+    print("\nFalling back to HTML parsing (may not work for dynamically loaded content)...")
     store_divs = soup.find_all('div', class_='page_list__v5vEU')
 
-    # If not found with class, try finding by structure
     if not store_divs:
-        # Try finding accordion items directly
         store_divs = soup.find_all('div', class_='accardion_accardionItem__Fyf_W')
 
-    print(f"Found {len(store_divs)} branches")
-
-    # Debug: print a sample of the HTML structure
-    if len(store_divs) == 0:
-        print("\nDebug: Could not find store divs. Checking page structure...")
-        # Check if page has any divs with 'list' in class name
-        all_divs = soup.find_all('div', class_=lambda x: x and 'list' in x.lower() if isinstance(x, str) else False)
-        print(f"Found {len(all_divs)} divs with 'list' in class name")
-
-        # Check all div classes to see what's available
-        all_divs_with_classes = soup.find_all('div', class_=True)
-        unique_classes = set()
-        for div in all_divs_with_classes[:50]:  # Check first 50 divs
-            if div.get('class'):
-                for cls in div.get('class'):
-                    unique_classes.add(cls)
-
-        print(f"\nSample of div classes found (first 50 divs):")
-        for cls in sorted(list(unique_classes)[:20]):  # Show first 20 unique classes
-            print(f"  {cls}")
-
-        print(f"\nResponse length: {len(response.text)} chars")
-
-        # Check for script tags with JSON data
-        all_scripts = soup.find_all('script')
-        print(f"\nFound {len(all_scripts)} script tags")
-
-        # Look for scripts with actual content
-        scripts_with_content = [s for s in all_scripts if s.string]
-        print(f"  Scripts with content: {len(scripts_with_content)}")
-
-        # Search for patterns in the HTML that might indicate data location
-        print("\nSearching for data patterns in HTML...")
-
-        # Look for common patterns
-        patterns_to_check = [
-            ('"stores":', 'stores key in JSON'),
-            ('"branches":', 'branches key in JSON'),
-            ('"locations":', 'locations key in JSON'),
-            ('28 May', 'Specific store name 28 May'),
-            ('Azadlıq prospekti', 'Specific store Azadlıq'),
-            ('Neftçilər', 'Specific store Neftçilər'),
-            ('self.__next_f', 'Next.js flight data'),
-            ('/api/', 'API endpoints'),
-            ('buildId', 'Next.js build ID')
-        ]
-
-        for pattern, description in patterns_to_check:
-            count = response.text.count(pattern)
-            if count > 0:
-                print(f"  Found '{pattern}' ({description}): {count} times")
-                # Find first occurrence
-                idx = response.text.find(pattern)
-                if idx > 0:
-                    context_start = max(0, idx - 50)
-                    context_end = min(len(response.text), idx + 150)
-                    print(f"    Context: ...{response.text[context_start:context_end]}...")
+    print(f"Found {len(store_divs)} branches in HTML")
 
     for store_div in store_divs:
         try:
@@ -278,7 +225,7 @@ def save_to_csv(branches: List[Dict[str, str]], output_file: str) -> None:
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
 
-    fieldnames = ['name', 'address', 'phone', 'hours']
+    fieldnames = ['name', 'address', 'phone', 'hours', 'latitude', 'longitude']
 
     try:
         with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
