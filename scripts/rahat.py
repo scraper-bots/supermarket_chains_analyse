@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""
+Rahat Market Web Scraper
+Extracts branch locations and details from rahatmarket.az
+"""
+
+import csv
+import requests
+from bs4 import BeautifulSoup
+from typing import List, Dict
+import os
+import re
+
+
+def scrape_rahat_locations(url: str = "https://rahatmarket.az/az/map") -> List[Dict[str, str]]:
+    """
+    Scrape Rahat market branch locations
+
+    Args:
+        url: URL of the Rahat stores map page
+
+    Returns:
+        List of dictionaries containing branch information
+    """
+    print(f"Fetching data from {url}...")
+
+    try:
+        response = requests.get(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        response.raise_for_status()
+        response.encoding = 'utf-8'
+    except requests.RequestException as e:
+        print(f"Error fetching page: {e}")
+        return []
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    branches = []
+
+    print("\nExtracting store data from JavaScript...")
+
+    # Find all script tags and look for the locations array
+    scripts = soup.find_all('script')
+
+    for script in scripts:
+        if script.string and 'var locations' in script.string:
+            script_content = script.string
+
+            # Extract the locations array using regex
+            # Pattern matches: [new google.maps.LatLng(lat, lng), 'name', '<a href...>content</a>']
+            # We need to capture the full entry including the HTML content
+            pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']*)["\'],\s*["\']<a[^>]*>([^<]*)</a>["\']'
+
+            matches = re.findall(pattern, script_content)
+
+            print(f"Found {len(matches)} stores with full details")
+
+            if matches:
+                for match in matches:
+                    latitude = match[0]
+                    longitude = match[1]
+                    name = match[2].replace('\\', '').strip()
+                    address = match[3].replace('\\', '').strip()
+
+                    # If name is empty, use address as name
+                    if not name:
+                        name = address
+                        address = ''
+
+                    branch_data = {
+                        'name': name if name else 'Rahat Market',
+                        'address': address,
+                        'phone': '',     # Phone not readily available
+                        'hours': '',     # Hours not readily available
+                        'latitude': latitude,
+                        'longitude': longitude
+                    }
+
+                    branches.append(branch_data)
+                    print(f"Extracted: {branch_data['name']}")
+            else:
+                # Fallback to simpler pattern if the detailed one doesn't match
+                print("Trying simpler pattern...")
+                simple_pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']*)["\']'
+
+                simple_matches = re.findall(simple_pattern, script_content)
+                print(f"Found {len(simple_matches)} stores with basic pattern")
+
+                for match in simple_matches:
+                    latitude = match[0]
+                    longitude = match[1]
+                    text = match[2].replace('\\', '').strip()
+
+                    # Parse the text to extract name and address
+                    # Format 1: "Rahat Market (address)" -> extract address
+                    # Format 2: Just address -> use as address
+                    name = 'Rahat Market'
+                    address = text
+
+                    if text.startswith('Rahat Market'):
+                        # Extract content from parentheses if present
+                        paren_match = re.search(r'Rahat Market\s*\(([^)]*)\)', text)
+                        if paren_match:
+                            address = paren_match.group(1).strip()
+                        else:
+                            # No parentheses, remove "Rahat Market" prefix
+                            address = text.replace('Rahat Market', '').strip()
+
+                    # If address is empty or very short, use the original text
+                    if not address or len(address) < 3:
+                        address = text
+
+                    branch_data = {
+                        'name': name,
+                        'address': address,
+                        'phone': '',
+                        'hours': '',
+                        'latitude': latitude,
+                        'longitude': longitude
+                    }
+
+                    branches.append(branch_data)
+                    print(f"Extracted: {name} - {address[:50]}{'...' if len(address) > 50 else ''}")
+
+            break
+
+    if not branches:
+        print("\nWarning: Could not find location data in JavaScript")
+        print("Attempting alternative extraction methods...")
+
+        # Try to find marker links as fallback
+        marker_links = soup.find_all('a', class_='marker-link')
+        print(f"Found {len(marker_links)} marker links")
+
+        for link in marker_links:
+            name = link.get_text(strip=True)
+            marker_id = link.get('data-markerid', '')
+
+            if name and name != 'Rahat Market':
+                branch_data = {
+                    'name': name,
+                    'address': '',
+                    'phone': '',
+                    'hours': '',
+                    'latitude': '',
+                    'longitude': ''
+                }
+
+                branches.append(branch_data)
+                print(f"Extracted: {name}")
+
+    return branches
+
+
+def save_to_csv(branches: List[Dict[str, str]], output_file: str) -> None:
+    """
+    Save branch data to CSV file
+
+    Args:
+        branches: List of branch dictionaries
+        output_file: Path to output CSV file
+    """
+    if not branches:
+        print("No data to save")
+        return
+
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
+
+    fieldnames = ['name', 'address', 'phone', 'hours', 'latitude', 'longitude']
+
+    try:
+        with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(branches)
+
+        print(f"\nSuccessfully saved {len(branches)} branches to {output_file}")
+    except Exception as e:
+        print(f"Error saving to CSV: {e}")
+
+
+def main():
+    """Main execution function"""
+    print("=" * 60)
+    print("Rahat Market Branch Scraper")
+    print("=" * 60)
+
+    # Scrape data
+    branches = scrape_rahat_locations()
+
+    if branches:
+        # Save to CSV
+        output_file = 'data/rahat.csv'
+        save_to_csv(branches, output_file)
+
+        # Print summary
+        print("\n" + "=" * 60)
+        print("Summary:")
+        print(f"Total branches: {len(branches)}")
+        print("=" * 60)
+    else:
+        print("\nNo branches found or error occurred")
+
+
+if __name__ == "__main__":
+    main()
