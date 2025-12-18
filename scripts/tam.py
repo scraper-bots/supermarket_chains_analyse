@@ -10,6 +10,44 @@ from typing import List, Dict
 import os
 import re
 from html import unescape
+from urllib.parse import unquote
+
+
+def dms_to_decimal(dms_str: str) -> tuple:
+    """
+    Convert DMS (degrees, minutes, seconds) to decimal degrees
+
+    Args:
+        dms_str: String like "40°22'34.8"N 47°07'33.2"E"
+
+    Returns:
+        Tuple of (latitude, longitude) as strings
+    """
+    try:
+        # Pattern to extract DMS coordinates
+        # Example: 40°22'34.8"N 47°07'33.2"E or 40%C2%B022'34.8%22N
+        pattern = r"(\d+)[°%C2%B0]+(\d+)'([\d.]+)[\"'%22]+([NS])[^\d]*(\d+)[°%C2%B0]+(\d+)'([\d.]+)[\"'%22]+([EW])"
+        match = re.search(pattern, dms_str)
+
+        if match:
+            lat_deg, lat_min, lat_sec, lat_dir = match.group(1, 2, 3, 4)
+            lon_deg, lon_min, lon_sec, lon_dir = match.group(5, 6, 7, 8)
+
+            # Convert to decimal
+            latitude = float(lat_deg) + float(lat_min)/60 + float(lat_sec)/3600
+            longitude = float(lon_deg) + float(lon_min)/60 + float(lon_sec)/3600
+
+            # Apply direction
+            if lat_dir == 'S':
+                latitude = -latitude
+            if lon_dir == 'W':
+                longitude = -longitude
+
+            return (str(latitude), str(longitude))
+    except:
+        pass
+
+    return ('', '')
 
 
 def scrape_tam_locations(api_url: str = "https://www.tamstore.az/api/branch-api") -> List[Dict[str, str]]:
@@ -86,6 +124,15 @@ def scrape_tam_locations(api_url: str = "https://www.tamstore.az/api/branch-api"
             map_data = branch.get('map', '')
 
             if map_data:
+                # Try to expand shortened Google Maps URLs first
+                if 'maps.app.goo.gl' in map_data or 'goo.gl' in map_data:
+                    try:
+                        # Follow redirect to get full URL
+                        redirect_response = requests.head(map_data, allow_redirects=True, timeout=5)
+                        map_data = redirect_response.url
+                    except:
+                        pass
+
                 # Try to extract coordinates from different formats
                 # Format 1: Direct URL like "https://www.google.com/maps?q=41.09286117553711,45.365360260009766"
                 coord_match = re.search(r'[?&]q=([-\d.]+),([-\d.]+)', map_data)
@@ -101,6 +148,14 @@ def scrape_tam_locations(api_url: str = "https://www.tamstore.az/api/branch-api"
                     if lat_match and lng_match:
                         latitude = lat_match.group(1)
                         longitude = lng_match.group(1)
+                    else:
+                        # Format 3: DMS format (degrees, minutes, seconds)
+                        # Example: 40°22'34.8"N 47°07'33.2"E or URL encoded version
+                        decoded_map = unquote(map_data)
+                        lat, lon = dms_to_decimal(decoded_map)
+                        if lat and lon:
+                            latitude = lat
+                            longitude = lon
 
             branch_data = {
                 'name': name,
