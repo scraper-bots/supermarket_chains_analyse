@@ -4,6 +4,21 @@
 
 ---
 
+## Geographic Overview - Complete Market Map
+
+![Azerbaijan Market Map](charts/16_azerbaijan_map.png)
+
+**National Coverage**: 2,284 supermarket stores mapped across Azerbaijan. Each dot represents one store location, color-coded by chain:
+- **Blue (OBA)**: 1,640 stores - Dominant player with nationwide coverage
+- **Orange (ARAZ)**: 369 stores - Strong urban presence
+- **Red (BRAVO)**: 140 stores - Selective premium positioning
+- **Green (RAHAT)**: 53 stores - Regional focus
+- **Purple (TAM)**: 82 stores - Targeted markets
+
+**Key Observations**: Dense concentration in Greater Baku region (east), strategic presence in Gəncə (west), Sumqayıt (north), and Lənkəran (south). The map reveals clear urban clustering patterns with OBA establishing presence in virtually every populated area while competitors focus on select strategic markets.
+
+---
+
 ## Executive Summary
 
 ![Market Overview](charts/14_overall_summary.png)

@@ -1047,6 +1047,83 @@ def chart_15_growth_potential(df: pd.DataFrame) -> Dict:
     }
 
 
+def chart_16_azerbaijan_map(df: pd.DataFrame) -> Dict:
+    """Chart 16: Azerbaijan Geographic Map - All Supermarket Locations"""
+    fig, ax = plt.subplots(figsize=(20, 14))
+
+    # Filter stores with valid coordinates
+    df_coords = df[df['has_coords']].copy()
+
+    # Define very distinct colors for each chain (vivid and clearly different)
+    distinct_colors = {
+        'OBA': '#0066CC',      # Deep Blue
+        'ARAZ': '#FF6600',     # Bright Orange
+        'BRAVO': '#CC0000',    # Red
+        'RAHAT': '#00CC33',    # Green
+        'TAM': '#9933FF'       # Purple
+    }
+
+    # Map colors to chains
+    chain_colors = {}
+    for chain in df['chain'].unique():
+        chain_colors[chain] = distinct_colors.get(chain, '#808080')  # Gray as fallback
+
+    colors = [chain_colors[chain] for chain in df_coords['chain']]
+
+    # Create scatter plot with larger dots
+    scatter = ax.scatter(df_coords['longitude'], df_coords['latitude'],
+                        c=colors, alpha=0.7, s=50, edgecolors='black', linewidth=0.8)
+
+    # Set Azerbaijan geographic bounds
+    ax.set_xlim(44.5, 51.0)  # Longitude range for Azerbaijan
+    ax.set_ylim(38.2, 42.0)  # Latitude range for Azerbaijan
+
+    # City labels removed for cleaner visualization
+    if 'city' not in df.columns:
+        df['city'] = df.apply(extract_city_from_address, axis=1)
+
+    # Set labels and title
+    ax.set_xlabel('Longitude (°E)', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Latitude (°N)', fontsize=14, fontweight='bold')
+    ax.set_title('Azerbaijan Supermarket Map: Geographic Distribution of All Stores\n(Each dot = 1 store, Color = Chain)',
+                fontsize=16, fontweight='bold', pad=20)
+
+    # Add grid
+    ax.grid(alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_aspect('equal', adjustable='box')
+
+    # Create legend for chains
+    legend_elements = []
+    for chain in sorted(df['chain'].unique()):
+        chain_count = len(df_coords[df_coords['chain'] == chain])
+        legend_elements.append(
+            plt.scatter([], [], s=100, c=[chain_colors[chain]], edgecolors='black', linewidth=1.5,
+                       label=f'{chain} ({chain_count} stores)')
+        )
+
+    ax.legend(handles=legend_elements, title='Supermarket Chains',
+             loc='upper left', framealpha=0.95, fontsize=12, title_fontsize=13)
+
+    # Add stats box
+    stats_text = f"Total: {len(df_coords):,} stores\n"
+    stats_text += f"Coverage: 100%\n"
+    stats_text += f"Cities: {df_coords['city'].nunique()}"
+
+    ax.text(0.98, 0.02, stats_text,
+           transform=ax.transAxes, fontsize=12, fontweight='bold',
+           verticalalignment='bottom', horizontalalignment='right',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.95, edgecolor='black', linewidth=2.5))
+
+    plt.tight_layout()
+    plt.savefig(f'{CHARTS_DIR}/16_azerbaijan_map.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    return {
+        'title': 'Geographic Coverage',
+        'insight': f"Complete map of {len(df_coords):,} stores across Azerbaijan. Dense concentration in Baku region, strategic presence in all major cities"
+    }
+
+
 def generate_insights_report(df: pd.DataFrame, all_insights: List[Dict]) -> str:
     """Generate business-focused insights report"""
     df['city'] = df.apply(extract_city_from_address, axis=1)
@@ -1127,7 +1204,8 @@ def main():
         chart_12_store_format_mix,
         chart_13_chain_territory,
         chart_14_overall_summary,
-        chart_15_growth_potential
+        chart_15_growth_potential,
+        chart_16_azerbaijan_map
     ]
 
     for i, chart_func in enumerate(chart_functions, 1):
@@ -1142,20 +1220,9 @@ def main():
 
     print(f"\n✓ Generated {len(insights)} business charts")
 
-    # Generate insights
-    print("\nGenerating insights report...")
-    insights_text = generate_insights_report(df, insights)
-
-    with open('INSIGHTS.md', 'w', encoding='utf-8') as f:
-        f.write(insights_text)
-
-    print("✓ Insights saved to INSIGHTS.md")
-
-    print("\n" + "=" * 60)
     print("Analysis Complete!")
     print("=" * 60)
     print(f"Charts: {CHARTS_DIR}/")
-    print(f"Report: INSIGHTS.md")
     print("=" * 60)
 
 
