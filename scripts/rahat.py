@@ -87,11 +87,28 @@ def scrape_rahat_locations(url: str = "https://rahatmarket.az/az/map") -> List[D
                 for match in name_matches:
                     latitude = match[0]
                     longitude = match[1]
-                    name = match[2].replace('\\', '').strip()
+                    text = match[2].replace('\\', '').strip()
+
+                    # Separate name and address
+                    # Format: "Rahat Market (address)" or just "address"
+                    name = 'Rahat Market'
+                    address = ''
+
+                    if text.startswith('Rahat Market'):
+                        # Extract content from parentheses if present
+                        paren_match = re.search(r'Rahat Market\s*\(([^)]*)\)', text)
+                        if paren_match:
+                            address = paren_match.group(1).strip()
+                        else:
+                            # No parentheses, might have trailing text
+                            address = text.replace('Rahat Market', '').strip()
+                    else:
+                        # Text doesn't start with "Rahat Market", use it as address
+                        address = text
 
                     branch_data = {
-                        'name': name if name else 'Rahat Market',
-                        'address': '',
+                        'name': name,
+                        'address': address,
                         'phone': '',
                         'hours': '',
                         'latitude': latitude,
@@ -99,7 +116,7 @@ def scrape_rahat_locations(url: str = "https://rahatmarket.az/az/map") -> List[D
                     }
 
                     branches.append(branch_data)
-                    print(f"Extracted: {name}")
+                    print(f"Extracted: {name} - {address[:50]}{'...' if len(address) > 50 else ''}")
 
             break
 
