@@ -47,71 +47,26 @@ def scrape_rahat_locations(url: str = "https://rahatmarket.az/az/map") -> List[D
             script_content = script.string
 
             # Extract the locations array using regex
-            # Pattern matches: [new google.maps.LatLng(lat, lng), 'name', '<a href...>content</a>']
-            # We need to capture the full entry including the HTML content
-            pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']*)["\'],\s*["\']<a[^>]*>([^<]*)</a>["\']'
+            # The JavaScript structure is: [new google.maps.LatLng(lat, lng), 'name', '<a ...>address</a>']
+            # We need to extract all three parts
 
-            matches = re.findall(pattern, script_content)
+            # First, try to match the complete pattern with both name and address
+            # The name is in the second position, address is inside the anchor tag
+            full_pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']+)["\'],\s*["\']<a[^>]*>([^<]+)</a>["\']'
 
-            print(f"Found {len(matches)} stores with full details")
+            full_matches = re.findall(full_pattern, script_content, re.DOTALL)
 
-            if matches:
-                for match in matches:
+            print(f"Found {len(full_matches)} stores with full details (name + address)")
+
+            if full_matches:
+                for match in full_matches:
                     latitude = match[0]
                     longitude = match[1]
                     name = match[2].replace('\\', '').strip()
                     address = match[3].replace('\\', '').strip()
 
-                    # If name is empty, use address as name
-                    if not name:
-                        name = address
-                        address = ''
-
                     branch_data = {
                         'name': name if name else 'Rahat Market',
-                        'address': address,
-                        'phone': '',     # Phone not readily available
-                        'hours': '',     # Hours not readily available
-                        'latitude': latitude,
-                        'longitude': longitude
-                    }
-
-                    branches.append(branch_data)
-                    print(f"Extracted: {branch_data['name']}")
-            else:
-                # Fallback to simpler pattern if the detailed one doesn't match
-                print("Trying simpler pattern...")
-                simple_pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']*)["\']'
-
-                simple_matches = re.findall(simple_pattern, script_content)
-                print(f"Found {len(simple_matches)} stores with basic pattern")
-
-                for match in simple_matches:
-                    latitude = match[0]
-                    longitude = match[1]
-                    text = match[2].replace('\\', '').strip()
-
-                    # Parse the text to extract name and address
-                    # Format 1: "Rahat Market (address)" -> extract address
-                    # Format 2: Just address -> use as address
-                    name = 'Rahat Market'
-                    address = text
-
-                    if text.startswith('Rahat Market'):
-                        # Extract content from parentheses if present
-                        paren_match = re.search(r'Rahat Market\s*\(([^)]*)\)', text)
-                        if paren_match:
-                            address = paren_match.group(1).strip()
-                        else:
-                            # No parentheses, remove "Rahat Market" prefix
-                            address = text.replace('Rahat Market', '').strip()
-
-                    # If address is empty or very short, use the original text
-                    if not address or len(address) < 3:
-                        address = text
-
-                    branch_data = {
-                        'name': name,
                         'address': address,
                         'phone': '',
                         'hours': '',
@@ -120,7 +75,31 @@ def scrape_rahat_locations(url: str = "https://rahatmarket.az/az/map") -> List[D
                     }
 
                     branches.append(branch_data)
-                    print(f"Extracted: {name} - {address[:50]}{'...' if len(address) > 50 else ''}")
+                    print(f"Extracted: {name}")
+            else:
+                # Fallback: extract just coordinates and names
+                print("Full pattern didn't match, trying name-only pattern...")
+                name_pattern = r'\[new google\.maps\.LatLng\(([\d.]+),\s*([\d.]+)\),\s*["\']([^"\']+)["\']'
+
+                name_matches = re.findall(name_pattern, script_content)
+                print(f"Found {len(name_matches)} stores with name pattern")
+
+                for match in name_matches:
+                    latitude = match[0]
+                    longitude = match[1]
+                    name = match[2].replace('\\', '').strip()
+
+                    branch_data = {
+                        'name': name if name else 'Rahat Market',
+                        'address': '',
+                        'phone': '',
+                        'hours': '',
+                        'latitude': latitude,
+                        'longitude': longitude
+                    }
+
+                    branches.append(branch_data)
+                    print(f"Extracted: {name}")
 
             break
 
