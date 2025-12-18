@@ -8,6 +8,8 @@ import csv
 import requests
 from typing import List, Dict
 import os
+import re
+from html import unescape
 
 
 def scrape_tam_locations(api_url: str = "https://www.tamstore.az/api/branch-api") -> List[Dict[str, str]]:
@@ -61,13 +63,44 @@ def scrape_tam_locations(api_url: str = "https://www.tamstore.az/api/branch-api"
 
     for branch in branch_list:
         try:
-            # Extract fields - adjust these based on actual API response structure
-            name = branch.get('name', branch.get('title', branch.get('branch_name', '')))
-            address = branch.get('address', branch.get('location', branch.get('full_address', '')))
-            phone = branch.get('phone', branch.get('phone_number', branch.get('tel', '')))
-            hours = branch.get('hours', branch.get('working_hours', branch.get('work_time', '')))
-            latitude = str(branch.get('latitude', branch.get('lat', '')))
-            longitude = str(branch.get('longitude', branch.get('lng', branch.get('lon', ''))))
+            # Extract name
+            name = branch.get('title', '')
+
+            # Extract and clean address (remove HTML tags)
+            address = branch.get('address', '')
+            if address:
+                # Remove HTML tags
+                address = re.sub(r'<[^>]+>', '', address)
+                # Unescape HTML entities
+                address = unescape(address).strip()
+
+            # Extract phone (use phone_1)
+            phone = branch.get('phone_1', '')
+
+            # Extract work hours
+            hours = branch.get('work_hours', '')
+
+            # Extract coordinates from map field
+            latitude = ''
+            longitude = ''
+            map_data = branch.get('map', '')
+
+            if map_data:
+                # Try to extract coordinates from different formats
+                # Format 1: Direct URL like "https://www.google.com/maps?q=41.09286117553711,45.365360260009766"
+                coord_match = re.search(r'[?&]q=([-\d.]+),([-\d.]+)', map_data)
+                if coord_match:
+                    latitude = coord_match.group(1)
+                    longitude = coord_match.group(2)
+                else:
+                    # Format 2: Iframe embed URL with coordinates in a different format
+                    # Example: !1m17!1m12!1m3!1d3037.134160954774!2d49.960864976011635!3d40.428028071437765
+                    # Look for pattern like !3d{lat} and !2d{lng}
+                    lat_match = re.search(r'!3d([-\d.]+)', map_data)
+                    lng_match = re.search(r'!2d([-\d.]+)', map_data)
+                    if lat_match and lng_match:
+                        latitude = lat_match.group(1)
+                        longitude = lng_match.group(1)
 
             branch_data = {
                 'name': name,
