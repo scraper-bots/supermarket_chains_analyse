@@ -953,20 +953,20 @@ def chart_14_overall_summary(df: pd.DataFrame) -> Dict:
 
 
 def chart_15_growth_potential(df: pd.DataFrame) -> Dict:
-    """Chart 15: Growth Potential Matrix"""
+    """Chart 15: Growth Potential Matrix - Fixed Labels"""
     if 'city' not in df.columns:
         df['city'] = df.apply(extract_city_from_address, axis=1)
 
-    fig, ax = plt.subplots(figsize=(14, 10))
+    fig, ax = plt.subplots(figsize=(16, 10))
 
-    # Top 20 cities
-    top_20_cities = df[~df['city'].isin(['Unknown', 'Regional'])]['city'].value_counts().head(20).index
+    # Top 12 cities only to reduce crowding
+    top_12_cities = df[~df['city'].isin(['Unknown', 'Regional'])]['city'].value_counts().head(12).index
 
     city_diversity = df.groupby('city')['chain'].nunique()
 
     city_data = pd.DataFrame({
-        'Store Count': df[df['city'].isin(top_20_cities)]['city'].value_counts(),
-        'Chain Count': city_diversity[top_20_cities]
+        'Store Count': df[df['city'].isin(top_12_cities)]['city'].value_counts(),
+        'Chain Count': city_diversity[top_12_cities]
     }).fillna(0)
 
     # Create scatter plot
@@ -975,12 +975,35 @@ def chart_15_growth_potential(df: pd.DataFrame) -> Dict:
                         c=city_data['Store Count']/city_data['Chain Count'],
                         cmap='RdYlGn_r', edgecolors='black', linewidth=2)
 
-    # Add city labels
-    for city, row in city_data.iterrows():
+    # Add city labels with smart positioning to avoid overlap
+    for idx, (city, row) in enumerate(city_data.iterrows()):
+        # Smart offset based on position and index to reduce overlap
+        if row['Store Count'] > 800:
+            # Very high stores (Bakı) - label above right
+            xytext = (15, 20)
+        elif row['Store Count'] > 300:
+            # High stores - alternate positions
+            if row['Chain Count'] > 4:
+                xytext = (10, -25)  # Top right quadrant - label below
+            else:
+                xytext = (-60, 15)  # Top left quadrant - label left
+        elif row['Store Count'] > 100:
+            # Medium stores - varied positions
+            if idx % 3 == 0:
+                xytext = (12, 8)
+            elif idx % 3 == 1:
+                xytext = (-50, -8)
+            else:
+                xytext = (8, -22)
+        else:
+            # Low stores - alternate sides
+            xytext = (10, 10) if idx % 2 == 0 else (-55, -5)
+
         ax.annotate(city, (row['Chain Count'], row['Store Count']),
-                   xytext=(5, 5), textcoords='offset points',
+                   xytext=xytext, textcoords='offset points',
                    fontsize=9, fontweight='bold',
-                   bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.7))
+                   bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8, edgecolor='gray'),
+                   arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.2', color='gray', lw=1.2))
 
     ax.set_xlabel('Number of Competing Chains', fontsize=13, fontweight='bold')
     ax.set_ylabel('Total Number of Stores', fontsize=13, fontweight='bold')
